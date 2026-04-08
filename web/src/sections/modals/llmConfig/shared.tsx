@@ -1,30 +1,31 @@
 "use client";
 
-import { ReactNode } from "react";
-import { Form, FormikProps } from "formik";
+import React, { useEffect, useRef, useState } from "react";
+import { Formik, Form, useFormikContext } from "formik";
+import type { FormikConfig } from "formik";
 import { usePaidEnterpriseFeaturesEnabled } from "@/components/settings/usePaidEnterpriseFeaturesEnabled";
 import { useAgents } from "@/hooks/useAgents";
 import { useUserGroups } from "@/lib/hooks";
-import { ModelConfiguration, SimpleKnownModel } from "@/interfaces/llm";
+import { LLMProviderView, ModelConfiguration } from "@/interfaces/llm";
 import * as InputLayouts from "@/layouts/input-layouts";
 import Checkbox from "@/refresh-components/inputs/Checkbox";
 import InputTypeInField from "@/refresh-components/form/InputTypeInField";
 import InputComboBox from "@/refresh-components/inputs/InputComboBox";
 import InputSelect from "@/refresh-components/inputs/InputSelect";
+import InputTypeIn from "@/refresh-components/inputs/InputTypeIn";
 import PasswordInputTypeInField from "@/refresh-components/form/PasswordInputTypeInField";
 import Switch from "@/refresh-components/inputs/Switch";
 import Text from "@/refresh-components/texts/Text";
-import { Button, LineItemButton, Tag } from "@opal/components";
+import { Button, LineItemButton } from "@opal/components";
 import { BaseLLMFormValues } from "@/sections/modals/llmConfig/utils";
-import { WithoutStyles } from "@opal/types";
-import Separator from "@/refresh-components/Separator";
+import type { RichStr } from "@opal/types";
 import { Section } from "@/layouts/general-layouts";
-import { Disabled, Hoverable } from "@opal/core";
 import { Content } from "@opal/layouts";
 import {
   SvgArrowExchange,
   SvgOnyxOctagon,
   SvgOrganization,
+  SvgPlusCircle,
   SvgRefreshCw,
   SvgSparkle,
   SvgUserManage,
@@ -46,27 +47,14 @@ import {
   getProviderProductName,
 } from "@/lib/llmConfig/providers";
 
-export function FieldSeparator() {
-  return <Separator noPadding className="px-2" />;
-}
-
-export type FieldWrapperProps = WithoutStyles<
-  React.HTMLAttributes<HTMLDivElement>
->;
-
-export function FieldWrapper(props: FieldWrapperProps) {
-  return <div {...props} className="p-2 w-full" />;
-}
-
 // ─── DisplayNameField ────────────────────────────────────────────────────────
 
 export interface DisplayNameFieldProps {
   disabled?: boolean;
 }
-
 export function DisplayNameField({ disabled = false }: DisplayNameFieldProps) {
   return (
-    <FieldWrapper>
+    <InputLayouts.FieldPadder>
       <InputLayouts.Vertical
         name="name"
         title="Display Name"
@@ -78,7 +66,7 @@ export function DisplayNameField({ disabled = false }: DisplayNameFieldProps) {
           variant={disabled ? "disabled" : undefined}
         />
       </InputLayouts.Vertical>
-    </FieldWrapper>
+    </InputLayouts.FieldPadder>
   );
 }
 
@@ -87,47 +75,54 @@ export function DisplayNameField({ disabled = false }: DisplayNameFieldProps) {
 export interface APIKeyFieldProps {
   optional?: boolean;
   providerName?: string;
+  subDescription?: string | RichStr;
 }
-
 export function APIKeyField({
   optional = false,
   providerName,
+  subDescription,
 }: APIKeyFieldProps) {
+  const defaultDescription = providerName
+    ? `Paste your API key from ${providerName} to access your models.`
+    : "Paste your API key to access your models.";
+
   return (
-    <FieldWrapper>
+    <InputLayouts.FieldPadder>
       <InputLayouts.Vertical
         name="api_key"
         title="API Key"
-        subDescription={
-          providerName
-            ? `Paste your API key from ${providerName} to access your models.`
-            : "Paste your API key to access your models."
-        }
+        subDescription={subDescription ?? defaultDescription}
         optional={optional}
       >
         <PasswordInputTypeInField name="api_key" placeholder="API Key" />
       </InputLayouts.Vertical>
-    </FieldWrapper>
+    </InputLayouts.FieldPadder>
   );
 }
 
-// ─── SingleDefaultModelField ─────────────────────────────────────────────────
+// ─── APIBaseField ───────────────────────────────────────────────────────────
 
-export interface SingleDefaultModelFieldProps {
+export interface APIBaseFieldProps {
+  optional?: boolean;
+  subDescription?: string | RichStr;
   placeholder?: string;
 }
-
-export function SingleDefaultModelField({
-  placeholder = "E.g. gpt-4o",
-}: SingleDefaultModelFieldProps) {
+export function APIBaseField({
+  optional = false,
+  subDescription,
+  placeholder = "https://",
+}: APIBaseFieldProps) {
   return (
-    <InputLayouts.Vertical
-      name="default_model_name"
-      title="Default Model"
-      description="The model to use by default for this provider unless otherwise specified."
-    >
-      <InputTypeInField name="default_model_name" placeholder={placeholder} />
-    </InputLayouts.Vertical>
+    <InputLayouts.FieldPadder>
+      <InputLayouts.Vertical
+        name="api_base"
+        title="API Base URL"
+        subDescription={subDescription}
+        optional={optional}
+      >
+        <InputTypeInField name="api_base" placeholder={placeholder} />
+      </InputLayouts.Vertical>
+    </InputLayouts.FieldPadder>
   );
 }
 
@@ -137,13 +132,8 @@ export function SingleDefaultModelField({
 const GROUP_PREFIX = "group:";
 const AGENT_PREFIX = "agent:";
 
-interface ModelsAccessFieldProps<T> {
-  formikProps: FormikProps<T>;
-}
-
-export function ModelsAccessField<T extends BaseLLMFormValues>({
-  formikProps,
-}: ModelsAccessFieldProps<T>) {
+export function ModelAccessField() {
+  const formikProps = useFormikContext<BaseLLMFormValues>();
   const { agents } = useAgents();
   const { data: userGroups, isLoading: userGroupsIsLoading } = useUserGroups();
   const { data: usersData } = useUsers({ includeApiKeys: false });
@@ -229,7 +219,7 @@ export function ModelsAccessField<T extends BaseLLMFormValues>({
 
   return (
     <div className="flex flex-col w-full">
-      <FieldWrapper>
+      <InputLayouts.FieldPadder>
         <InputLayouts.Horizontal
           name="is_public"
           title="Models Access"
@@ -250,7 +240,7 @@ export function ModelsAccessField<T extends BaseLLMFormValues>({
             </InputSelect.Content>
           </InputSelect>
         </InputLayouts.Horizontal>
-      </FieldWrapper>
+      </InputLayouts.FieldPadder>
 
       {!isPublic && (
         <Card backgroundVariant="light" borderVariant="none" sizeVariant="lg">
@@ -316,7 +306,7 @@ export function ModelsAccessField<T extends BaseLLMFormValues>({
               </div>
             )}
 
-            <FieldSeparator />
+            <InputLayouts.FieldSeparator />
 
             {selectedAgentIds.length > 0 ? (
               <div className="grid grid-cols-2 gap-1 w-full">
@@ -371,84 +361,70 @@ export function ModelsAccessField<T extends BaseLLMFormValues>({
 
 // ─── ModelsField ─────────────────────────────────────────────────────
 
-export interface ModelsFieldProps<T> {
-  formikProps: FormikProps<T>;
-  modelConfigurations: ModelConfiguration[];
-  recommendedDefaultModel: SimpleKnownModel | null;
+export interface ModelSelectionFieldProps {
   shouldShowAutoUpdateToggle: boolean;
   /** Called when the user clicks the refresh button to re-fetch models. */
   onRefetch?: () => Promise<void> | void;
+  /** Called when the user adds a custom model name (e.g. for Azure). */
+  onAddModel?: (modelName: string) => void;
 }
-
-export function ModelsField<T extends BaseLLMFormValues>({
-  formikProps,
-  modelConfigurations,
-  recommendedDefaultModel,
+export function ModelSelectionField({
   shouldShowAutoUpdateToggle,
   onRefetch,
-}: ModelsFieldProps<T>) {
+  onAddModel,
+}: ModelSelectionFieldProps) {
+  const formikProps = useFormikContext<BaseLLMFormValues>();
+  const [newModelName, setNewModelName] = useState("");
   const isAutoMode = formikProps.values.is_auto_mode;
-  const selectedModels = formikProps.values.selected_model_names ?? [];
-  const defaultModel = formikProps.values.default_model_name;
+  const models = formikProps.values.model_configurations;
 
-  function handleCheckboxChange(modelName: string, checked: boolean) {
-    // Read current values inside the handler to avoid stale closure issues
-    const currentSelected = formikProps.values.selected_model_names ?? [];
-    const currentDefault = formikProps.values.default_model_name;
-
-    if (checked) {
-      const newSelected = [...currentSelected, modelName];
-      formikProps.setFieldValue("selected_model_names", newSelected);
-      // If this is the first model, set it as default
-      if (currentSelected.length === 0) {
-        formikProps.setFieldValue("default_model_name", modelName);
-      }
-    } else {
-      const newSelected = currentSelected.filter((name) => name !== modelName);
-      formikProps.setFieldValue("selected_model_names", newSelected);
-      // If removing the default, set the first remaining model as default
-      if (currentDefault === modelName && newSelected.length > 0) {
-        formikProps.setFieldValue("default_model_name", newSelected[0]);
-      } else if (newSelected.length === 0) {
-        formikProps.setFieldValue("default_model_name", undefined);
-      }
+  // Snapshot the original model visibility so we can restore it when
+  // toggling auto mode back on.
+  const originalModelsRef = useRef(models);
+  useEffect(() => {
+    if (originalModelsRef.current.length === 0 && models.length > 0) {
+      originalModelsRef.current = models;
     }
-  }
+  }, [models]);
 
-  function handleSetDefault(modelName: string) {
-    formikProps.setFieldValue("default_model_name", modelName);
+  // Automatically derive test_model_name from model_configurations.
+  // Any change to visibility or the model list syncs this automatically.
+  useEffect(() => {
+    const firstVisible = models.find((m) => m.is_visible)?.name;
+    if (firstVisible !== formikProps.values.test_model_name) {
+      formikProps.setFieldValue("test_model_name", firstVisible);
+    }
+  }, [models]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function setVisibility(modelName: string, visible: boolean) {
+    const updated = models.map((m) =>
+      m.name === modelName ? { ...m, is_visible: visible } : m
+    );
+    formikProps.setFieldValue("model_configurations", updated);
   }
 
   function handleToggleAutoMode(nextIsAutoMode: boolean) {
     formikProps.setFieldValue("is_auto_mode", nextIsAutoMode);
-    formikProps.setFieldValue(
-      "selected_model_names",
-      modelConfigurations.filter((m) => m.is_visible).map((m) => m.name)
-    );
-    formikProps.setFieldValue(
-      "default_model_name",
-      recommendedDefaultModel?.name ?? undefined
-    );
-  }
-
-  const allSelected =
-    modelConfigurations.length > 0 &&
-    modelConfigurations.every((m) => selectedModels.includes(m.name));
-
-  function handleToggleSelectAll() {
-    if (allSelected) {
-      formikProps.setFieldValue("selected_model_names", []);
-      formikProps.setFieldValue("default_model_name", undefined);
-    } else {
-      const allNames = modelConfigurations.map((m) => m.name);
-      formikProps.setFieldValue("selected_model_names", allNames);
-      if (!formikProps.values.default_model_name && allNames.length > 0) {
-        formikProps.setFieldValue("default_model_name", allNames[0]);
-      }
+    if (nextIsAutoMode) {
+      formikProps.setFieldValue(
+        "model_configurations",
+        originalModelsRef.current
+      );
     }
   }
 
-  const visibleModels = modelConfigurations.filter((m) => m.is_visible);
+  const allSelected = models.length > 0 && models.every((m) => m.is_visible);
+
+  function handleToggleSelectAll() {
+    const nextVisible = !allSelected;
+    const updated = models.map((m) => ({
+      ...m,
+      is_visible: nextVisible,
+    }));
+    formikProps.setFieldValue("model_configurations", updated);
+  }
+
+  const visibleModels = models.filter((m) => m.is_visible);
 
   return (
     <Card backgroundVariant="light" borderVariant="none" sizeVariant="lg">
@@ -460,15 +436,14 @@ export function ModelsField<T extends BaseLLMFormValues>({
           center
         >
           <Section flexDirection="row" gap={0}>
-            <Disabled disabled={isAutoMode || modelConfigurations.length === 0}>
-              <Button
-                prominence="tertiary"
-                size="md"
-                onClick={handleToggleSelectAll}
-              >
-                {allSelected ? "Unselect All" : "Select All"}
-              </Button>
-            </Disabled>
+            <Button
+              disabled={isAutoMode || models.length === 0}
+              prominence="tertiary"
+              size="md"
+              onClick={handleToggleSelectAll}
+            >
+              {allSelected ? "Unselect All" : "Select All"}
+            </Button>
             {onRefetch && (
               <Button
                 prominence="tertiary"
@@ -489,91 +464,75 @@ export function ModelsField<T extends BaseLLMFormValues>({
           </Section>
         </InputLayouts.Horizontal>
 
-        {modelConfigurations.length === 0 ? (
+        {models.length === 0 ? (
           <EmptyMessageCard title="No models available." />
         ) : (
           <Section gap={0.25}>
             {isAutoMode
-              ? // Auto mode: read-only display
-                visibleModels.map((model) => (
-                  <Hoverable.Root
+              ? visibleModels.map((model) => (
+                  <LineItemButton
                     key={model.name}
-                    group="LLMConfigurationButton"
-                    widthVariant="full"
-                  >
-                    <LineItemButton
-                      variant="section"
-                      sizePreset="main-ui"
-                      selectVariant="select-heavy"
-                      state="selected"
-                      icon={() => <Checkbox checked />}
-                      title={model.display_name || model.name}
-                      rightChildren={
-                        model.name === defaultModel ? (
-                          <Section>
-                            <Tag title="Default Model" color="blue" />
-                          </Section>
-                        ) : undefined
-                      }
-                    />
-                  </Hoverable.Root>
+                    variant="section"
+                    sizePreset="main-ui"
+                    selectVariant="select-heavy"
+                    state="selected"
+                    icon={() => <Checkbox checked />}
+                    title={model.display_name || model.name}
+                  />
                 ))
-              : // Manual mode: checkbox selection
-                modelConfigurations.map((modelConfiguration) => {
-                  const isSelected = selectedModels.includes(
-                    modelConfiguration.name
-                  );
-                  const isDefault = defaultModel === modelConfiguration.name;
+              : models.map((model) => (
+                  <LineItemButton
+                    key={model.name}
+                    variant="section"
+                    sizePreset="main-ui"
+                    selectVariant="select-heavy"
+                    state={model.is_visible ? "selected" : "empty"}
+                    icon={() => <Checkbox checked={model.is_visible} />}
+                    title={model.name}
+                    onClick={() => setVisibility(model.name, !model.is_visible)}
+                  />
+                ))}
+          </Section>
+        )}
 
-                  return (
-                    <Hoverable.Root
-                      key={modelConfiguration.name}
-                      group="LLMConfigurationButton"
-                      widthVariant="full"
-                    >
-                      <LineItemButton
-                        variant="section"
-                        sizePreset="main-ui"
-                        selectVariant="select-heavy"
-                        state={isSelected ? "selected" : "empty"}
-                        icon={() => <Checkbox checked={isSelected} />}
-                        title={modelConfiguration.name}
-                        onClick={() =>
-                          handleCheckboxChange(
-                            modelConfiguration.name,
-                            !isSelected
-                          )
-                        }
-                        rightChildren={
-                          isSelected ? (
-                            isDefault ? (
-                              <Section>
-                                <Tag color="blue" title="Default Model" />
-                              </Section>
-                            ) : (
-                              <Hoverable.Item
-                                group="LLMConfigurationButton"
-                                variant="opacity-on-hover"
-                              >
-                                <Button
-                                  size="sm"
-                                  prominence="internal"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSetDefault(modelConfiguration.name);
-                                  }}
-                                  type="button"
-                                >
-                                  Set as default
-                                </Button>
-                              </Hoverable.Item>
-                            )
-                          ) : undefined
-                        }
-                      />
-                    </Hoverable.Root>
-                  );
-                })}
+        {onAddModel && !isAutoMode && (
+          <Section flexDirection="row" gap={0.5}>
+            <div className="flex-1">
+              <InputTypeIn
+                placeholder="Enter model name"
+                value={newModelName}
+                onChange={(e) => setNewModelName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newModelName.trim()) {
+                    e.preventDefault();
+                    const trimmed = newModelName.trim();
+                    if (!models.some((m) => m.name === trimmed)) {
+                      onAddModel(trimmed);
+                      setNewModelName("");
+                    }
+                  }
+                }}
+                showClearButton={false}
+              />
+            </div>
+            <Button
+              prominence="secondary"
+              icon={SvgPlusCircle}
+              type="button"
+              disabled={
+                !newModelName.trim() ||
+                models.some((m) => m.name === newModelName.trim())
+              }
+              onClick={() => {
+                const trimmed = newModelName.trim();
+                if (trimmed && !models.some((m) => m.name === trimmed)) {
+                  onAddModel(trimmed);
+                  setNewModelName("");
+                }
+              }}
+            >
+              Add Model
+            </Button>
           </Section>
         )}
 
@@ -593,41 +552,87 @@ export function ModelsField<T extends BaseLLMFormValues>({
   );
 }
 
-// ============================================================================
-// LLMConfigurationModalWrapper
-// ============================================================================
+// ─── ModalWrapper ─────────────────────────────────────────────────────
 
-interface LLMConfigurationModalWrapperProps {
-  providerEndpoint: string;
-  providerName?: string;
-  existingProviderName?: string;
+export interface ModalWrapperProps<
+  T extends BaseLLMFormValues = BaseLLMFormValues,
+> {
+  providerName: string;
+  llmProvider?: LLMProviderView;
   onClose: () => void;
-  isFormValid: boolean;
-  isDirty?: boolean;
-  isTesting?: boolean;
-  isSubmitting?: boolean;
-  children: ReactNode;
+  initialValues: T;
+  validationSchema: FormikConfig<T>["validationSchema"];
+  onSubmit: FormikConfig<T>["onSubmit"];
+  children: React.ReactNode;
+}
+export function ModalWrapper<T extends BaseLLMFormValues = BaseLLMFormValues>({
+  providerName,
+  llmProvider,
+  onClose,
+  initialValues,
+  validationSchema,
+  onSubmit,
+  children,
+}: ModalWrapperProps<T>) {
+  return (
+    <Formik
+      initialValues={initialValues}
+      validationSchema={validationSchema}
+      validateOnMount
+      onSubmit={onSubmit}
+    >
+      {() => (
+        <ModalWrapperInner
+          providerName={providerName}
+          llmProvider={llmProvider}
+          onClose={onClose}
+          modelConfigurations={initialValues.model_configurations}
+        >
+          {children}
+        </ModalWrapperInner>
+      )}
+    </Formik>
+  );
 }
 
-export function LLMConfigurationModalWrapper({
-  providerEndpoint,
+interface ModalWrapperInnerProps {
+  providerName: string;
+  llmProvider?: LLMProviderView;
+  onClose: () => void;
+  modelConfigurations?: ModelConfiguration[];
+  children: React.ReactNode;
+}
+function ModalWrapperInner({
   providerName,
-  existingProviderName,
+  llmProvider,
   onClose,
-  isFormValid,
-  isDirty,
-  isTesting,
-  isSubmitting,
+  modelConfigurations,
   children,
-}: LLMConfigurationModalWrapperProps) {
-  const busy = isTesting || isSubmitting;
-  const providerIcon = getProviderIcon(providerEndpoint);
-  const providerDisplayName =
-    providerName ?? getProviderDisplayName(providerEndpoint);
-  const providerProductName = getProviderProductName(providerEndpoint);
+}: ModalWrapperInnerProps) {
+  const { isValid, dirty, isSubmitting, status, setFieldValue, values } =
+    useFormikContext<BaseLLMFormValues>();
 
-  const title = existingProviderName
-    ? `Configure "${existingProviderName}"`
+  // When SWR resolves after mount, populate model_configurations if still
+  // empty. test_model_name is then derived automatically by
+  // ModelSelectionField's useEffect.
+  useEffect(() => {
+    if (
+      modelConfigurations &&
+      modelConfigurations.length > 0 &&
+      values.model_configurations.length === 0
+    ) {
+      setFieldValue("model_configurations", modelConfigurations);
+    }
+  }, [modelConfigurations]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isTesting = status?.isTesting === true;
+  const busy = isTesting || isSubmitting;
+  const providerIcon = getProviderIcon(providerName);
+  const providerDisplayName = getProviderDisplayName(providerName);
+  const providerProductName = getProviderProductName(providerName);
+
+  const title = llmProvider
+    ? `Configure "${llmProvider.name}"`
     : `Set up ${providerProductName}`;
   const description = `Connect to ${providerDisplayName} and set up your ${providerProductName} models.`;
 
@@ -650,21 +655,19 @@ export function LLMConfigurationModalWrapper({
             <Button prominence="secondary" onClick={onClose} type="button">
               Cancel
             </Button>
-            <Disabled
-              disabled={
-                !isFormValid || busy || (!!existingProviderName && !isDirty)
-              }
+            <Button
+              disabled={!isValid || !dirty || busy}
+              type="submit"
+              icon={busy ? SimpleLoader : undefined}
             >
-              <Button type="submit" icon={busy ? SimpleLoader : undefined}>
-                {existingProviderName
-                  ? busy
-                    ? "Updating"
-                    : "Update"
-                  : busy
-                    ? "Connecting"
-                    : "Connect"}
-              </Button>
-            </Disabled>
+              {llmProvider?.name
+                ? busy
+                  ? "Updating"
+                  : "Update"
+                : busy
+                  ? "Connecting"
+                  : "Connect"}
+            </Button>
           </Modal.Footer>
         </Form>
       </Modal.Content>
