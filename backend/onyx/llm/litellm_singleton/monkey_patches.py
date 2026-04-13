@@ -739,7 +739,7 @@ def _patch_logging_assembled_streaming_response() -> None:
 
 def _patch_responses_metadata_none() -> None:
     """
-    Patches litellm.responses to normalize metadata=None to metadata={} in kwargs.
+    Patches litellm.responses to drop metadata=None from kwargs.
 
     LiteLLM's @client decorator wrapper in utils.py (line 1721) does:
         _is_litellm_router_call = "model_group" in kwargs.get("metadata", {})
@@ -767,8 +767,8 @@ def _patch_responses_metadata_none() -> None:
 
     @wraps(original_responses)
     def _patched_responses(*args: Any, **kwargs: Any) -> Any:
-        if kwargs.get("metadata") is None:
-            kwargs["metadata"] = {}
+        if "metadata" in kwargs and kwargs["metadata"] is None:
+            kwargs.pop("metadata")
         return original_responses(*args, **kwargs)
 
     _patched_responses._metadata_patched = True  # type: ignore[attr-defined]
