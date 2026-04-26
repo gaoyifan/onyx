@@ -67,7 +67,6 @@ function OpenAIModalInternals({
         <InputHorizontal
           title="Web Search"
           description="Enable OpenAI native web search for chats that use this provider. This is separate from Onyx's Agent-level web_search tool."
-          nonInteractive
           center
         >
           <Switch

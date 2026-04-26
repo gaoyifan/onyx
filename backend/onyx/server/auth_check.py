@@ -38,6 +38,10 @@ PUBLIC_ENDPOINT_SPECS = [
     # they solve it, and the endpoint's own handler enforces the only
     # thing that matters (valid Google siteverify response).
     ("/auth/captcha/oauth-verify", {"POST"}),
+    # Feishu in-client login flow. These endpoints issue and consume their own
+    # short-lived CSRF state before the Onyx auth cookie is created.
+    ("/auth/feishu/config", {"GET"}),
+    ("/auth/feishu/login", {"POST"}),
     ("/auth/logout", {"POST"}),
     ("/auth/forgot-password", {"POST"}),
     ("/auth/reset-password", {"POST"}),
