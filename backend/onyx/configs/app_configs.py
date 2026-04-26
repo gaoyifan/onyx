@@ -106,6 +106,17 @@ ONYX_QUERY_HISTORY_TYPE = QueryHistoryType(
 # fixes it)
 WEB_DOMAIN = os.environ.get("WEB_DOMAIN") or "http://localhost:3000"
 
+FEISHU_AUTH_ENABLED = os.environ.get("FEISHU_AUTH_ENABLED", "").lower() == "true"
+FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID", "")
+FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET", "")
+FEISHU_SYNTHETIC_EMAIL_DOMAIN = os.environ.get(
+    "FEISHU_SYNTHETIC_EMAIL_DOMAIN", "zhong-mo.com"
+).strip()
+FEISHU_H5_SDK_URL = os.environ.get(
+    "FEISHU_H5_SDK_URL",
+    "https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.44.js",
+)
+
 
 #####
 # Auth Configs
@@ -1300,7 +1311,9 @@ OPENROUTER_DEFAULT_API_KEY = os.environ.get("OPENROUTER_DEFAULT_API_KEY")
 INSTANCE_TYPE = (
     "managed"
     if os.environ.get("IS_MANAGED_INSTANCE", "").lower() == "true"
-    else "cloud" if AUTH_TYPE == AuthType.CLOUD else "self_hosted"
+    else "cloud"
+    if AUTH_TYPE == AuthType.CLOUD
+    else "self_hosted"
 )
 
 

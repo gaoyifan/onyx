@@ -50,7 +50,9 @@ jest.mock("@/hooks/useToast", () => {
 });
 
 function getInputByName(name: string) {
-  const input = document.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+  const input = document.querySelector<HTMLInputElement>(
+    `input[name="${name}"]`
+  );
   expect(input).not.toBeNull();
   return input!;
 }
@@ -88,8 +90,15 @@ describe("OpenAIModal", () => {
     render(<OpenAIModal variant="onboarding" onOpenChange={() => {}} />);
 
     await user.type(getInputByName("api_key"), "test-openai-key");
-    await user.type(getInputByName("api_base"), "https://example.openai.local/v1");
-    await user.click(screen.getAllByRole("switch")[0]);
+    await user.type(
+      getInputByName("api_base"),
+      "https://example.openai.local/v1"
+    );
+    const webSearchSwitch = screen.getAllByRole("switch")[0];
+    if (!webSearchSwitch) {
+      throw new Error("Expected web search switch to be rendered");
+    }
+    await user.click(webSearchSwitch);
     await user.click(screen.getByRole("button", { name: /connect/i }));
 
     await waitFor(() => {
