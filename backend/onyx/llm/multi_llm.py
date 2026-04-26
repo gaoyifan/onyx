@@ -65,6 +65,7 @@ if TYPE_CHECKING:
 _LLM_PROMPT_LONG_TERM_LOG_CATEGORY = "llm_prompt"
 LEGACY_MAX_TOKENS_KWARG = "max_tokens"
 STANDARD_MAX_TOKENS_KWARG = "max_completion_tokens"
+OPENAI_WEB_SEARCH_CONFIG_KEY = "OPENAI_WEB_SEARCH_ENABLED"
 _VERTEX_ANTHROPIC_MODELS_REJECTING_OUTPUT_CONFIG = (
     "claude-opus-4-5",
     "claude-opus-4-6",
@@ -242,6 +243,38 @@ def _anthropic_uses_adaptive_thinking(model_name: str) -> bool:
         adaptive_model in normalized_model_name
         for adaptive_model in _ANTHROPIC_ADAPTIVE_THINKING_MODELS
     )
+
+
+def _should_enable_openai_web_search(
+    model_provider: str,
+    model_name: str,
+    custom_config: dict[str, str] | None,
+) -> bool:
+    return (
+        model_provider == LlmProviderNames.OPENAI
+        and is_true_openai_model(model_provider, model_name)
+        and custom_config is not None
+        and custom_config.get(OPENAI_WEB_SEARCH_CONFIG_KEY) == "true"
+    )
+
+
+def _build_effective_tools(
+    tools: list[dict[str, Any]] | None,
+    model_provider: str,
+    model_name: str,
+    custom_config: dict[str, str] | None,
+) -> list[dict[str, Any]] | None:
+    effective_tools = list(tools) if tools else []
+
+    if _should_enable_openai_web_search(model_provider, model_name, custom_config):
+        has_native_web_search = any(
+            isinstance(tool, dict) and tool.get("type") == "web_search"
+            for tool in effective_tools
+        )
+        if not has_native_web_search:
+            effective_tools.append({"type": "web_search"})
+
+    return effective_tools or None
 
 
 class LitellmLLM(LLM):
@@ -464,6 +497,12 @@ class LitellmLLM(LLM):
             is_vertex_ai
             and _is_vertex_model_rejecting_output_config(self.config.model_name)
         )
+        effective_tools = _build_effective_tools(
+            tools=tools,
+            model_provider=self.config.model_provider,
+            model_name=self.config.model_name,
+            custom_config=self._custom_config,
+        )
 
         #########################
         # Build arguments
@@ -497,7 +536,7 @@ class LitellmLLM(LLM):
             tool_choice = ToolChoiceOptions.AUTO
 
         # If no tools are provided, tool_choice should be None
-        if not tools:
+        if not effective_tools:
             tool_choice = None
 
         # Temperature
@@ -576,7 +615,7 @@ class LitellmLLM(LLM):
                 else:
                     optional_kwargs["reasoning_effort"] = ReasoningEffort.MEDIUM.value
 
-        if tools:
+        if effective_tools:
             # OpenAI will error if parallel_tool_calls is True and tools are not specified
             optional_kwargs["parallel_tool_calls"] = parallel_tool_calls
 
@@ -600,6 +639,11 @@ class LitellmLLM(LLM):
             model_kwargs=self._model_kwargs,
             user_identity=user_identity,
         )
+        if is_openai_model and "metadata" in passthrough_kwargs:
+            # OpenAI's responses API rejects metadata in this path. Keep other
+            # passthrough fields intact, especially `user`.
+            passthrough_kwargs = passthrough_kwargs.copy()
+            passthrough_kwargs.pop("metadata", None)
 
         try:
             # NOTE: must pass in None instead of empty strings otherwise litellm
@@ -648,7 +692,7 @@ class LitellmLLM(LLM):
 
                 # Only pass tool_choice when tools are present — some providers (e.g. Fireworks)
                 # reject requests where tool_choice is explicitly null.
-                if tools and tool_choice is not None:
+                if effective_tools and tool_choice is not None:
                     optional_kwargs["tool_choice"] = tool_choice
 
                 response = litellm.completion(
@@ -658,7 +702,7 @@ class LitellmLLM(LLM):
                     api_version=self._api_version or None,
                     custom_llm_provider=self._custom_llm_provider or None,
                     messages=messages,
-                    tools=tools,
+                    tools=effective_tools,
                     stream=stream,
                     temperature=temperature,
                     timeout=timeout_override or self._timeout,

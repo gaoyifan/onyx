@@ -547,7 +547,9 @@ def test_openai_chat_omits_reasoning_params() -> None:
         assert mock_is_openai.called
 
 
-def test_user_identity_metadata_enabled(default_multi_llm: LitellmLLM) -> None:
+def test_true_openai_omits_metadata_on_responses_path(
+    default_multi_llm: LitellmLLM,
+) -> None:
     with (
         patch("litellm.completion") as mock_completion,
         patch("onyx.llm.utils.SEND_USER_METADATA_TO_LLM_PROVIDER", True),
@@ -571,6 +573,51 @@ def test_user_identity_metadata_enabled(default_multi_llm: LitellmLLM) -> None:
         identity = LLMUserIdentity(user_id="user_123", session_id="session_abc")
 
         default_multi_llm.invoke(messages, user_identity=identity)
+
+        mock_completion.assert_called_once()
+        kwargs = mock_completion.call_args.kwargs
+        assert kwargs["user"] == "user_123"
+        assert "metadata" not in kwargs
+
+
+def test_non_true_openai_still_sends_identity_metadata() -> None:
+    model_provider = LlmProviderNames.OPENAI_COMPATIBLE
+    model_name = "gpt-3.5-turbo"
+
+    llm = LitellmLLM(
+        api_key="test_key",
+        timeout=30,
+        model_provider=model_provider,
+        model_name=model_name,
+        max_input_tokens=get_max_input_tokens(
+            model_provider=model_provider,
+            model_name=model_name,
+        ),
+    )
+
+    with (
+        patch("litellm.completion") as mock_completion,
+        patch("onyx.llm.utils.SEND_USER_METADATA_TO_LLM_PROVIDER", True),
+    ):
+        mock_stream_chunks = [
+            litellm.ModelResponse(
+                id="chatcmpl-123",
+                choices=[
+                    litellm.Choices(
+                        delta=_create_delta(role="assistant", content="Hello"),
+                        finish_reason="stop",
+                        index=0,
+                    )
+                ],
+                model="gpt-3.5-turbo",
+            ),
+        ]
+        mock_completion.return_value = mock_stream_chunks
+
+        messages: LanguageModelInput = [UserMessage(content="Hi")]
+        identity = LLMUserIdentity(user_id="user_123", session_id="session_abc")
+
+        llm.invoke(messages, user_identity=identity)
 
         mock_completion.assert_called_once()
         kwargs = mock_completion.call_args.kwargs
@@ -644,8 +691,54 @@ def test_user_identity_metadata_disabled_omits_identity(
         assert "metadata" not in kwargs
 
 
-def test_existing_metadata_pass_through_when_identity_disabled() -> None:
+def test_true_openai_omits_existing_metadata_on_responses_path() -> None:
     model_provider = LlmProviderNames.OPENAI
+    model_name = "gpt-3.5-turbo"
+
+    llm = LitellmLLM(
+        api_key="test_key",
+        timeout=30,
+        model_provider=model_provider,
+        model_name=model_name,
+        max_input_tokens=get_max_input_tokens(
+            model_provider=model_provider,
+            model_name=model_name,
+        ),
+        model_kwargs={"metadata": {"foo": "bar"}},
+    )
+
+    with (
+        patch("litellm.completion") as mock_completion,
+        patch("onyx.llm.utils.SEND_USER_METADATA_TO_LLM_PROVIDER", False),
+    ):
+        mock_stream_chunks = [
+            litellm.ModelResponse(
+                id="chatcmpl-123",
+                choices=[
+                    litellm.Choices(
+                        delta=_create_delta(role="assistant", content="Hello"),
+                        finish_reason="stop",
+                        index=0,
+                    )
+                ],
+                model="gpt-3.5-turbo",
+            ),
+        ]
+        mock_completion.return_value = mock_stream_chunks
+
+        messages: LanguageModelInput = [UserMessage(content="Hi")]
+        identity = LLMUserIdentity(user_id="user_123", session_id="session_abc")
+
+        llm.invoke(messages, user_identity=identity)
+
+        mock_completion.assert_called_once()
+        kwargs = mock_completion.call_args.kwargs
+        assert "user" not in kwargs
+        assert "metadata" not in kwargs
+
+
+def test_existing_metadata_pass_through_for_non_true_openai_when_identity_disabled() -> None:
+    model_provider = LlmProviderNames.OPENAI_COMPATIBLE
     model_name = "gpt-3.5-turbo"
 
     llm = LitellmLLM(
@@ -921,7 +1014,7 @@ def test_temporary_env_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
         kwargs = mock_completion.call_args.kwargs
         assert kwargs["stream"] is True
         assert "user" not in kwargs
-        assert kwargs["metadata"]["foo"] == "bar"
+        assert "metadata" not in kwargs
 
         # Check that the environment variables are back to the original values
         for env_var, value in EXPECTED_ENV_VARS.items():
@@ -990,6 +1083,8 @@ def test_temporary_env_cleanup_on_exception(monkeypatch: pytest.MonkeyPatch) -> 
             llm.invoke(messages, user_identity=identity)
 
         mock_completion.assert_called_once()
+        kwargs = mock_completion.call_args.kwargs
+        assert "metadata" not in kwargs
 
         # Check that the environment variables are back to the original values
         for env_var, value in EXPECTED_ENV_VARS.items():
@@ -1464,6 +1559,135 @@ def test_no_tool_choice_sent_when_no_tools(default_multi_llm: LitellmLLM) -> Non
         assert (
             "tool_choice" not in kwargs
         ), "tool_choice must not be sent to providers when no tools are provided"
+
+
+def test_true_openai_appends_native_web_search_tool() -> None:
+    llm = LitellmLLM(
+        api_key="test_key",
+        timeout=30,
+        model_provider=LlmProviderNames.OPENAI,
+        model_name="gpt-4o",
+        max_input_tokens=128000,
+        custom_config={"OPENAI_WEB_SEARCH_ENABLED": "true"},
+    )
+
+    messages: LanguageModelInput = [UserMessage(content="Search for the latest release")]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Look up data",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                },
+            },
+        }
+    ]
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = [
+            litellm.ModelResponse(
+                id="chatcmpl-123",
+                choices=[
+                    litellm.Choices(
+                        delta=_create_delta(role="assistant", content="Done"),
+                        finish_reason="stop",
+                        index=0,
+                    )
+                ],
+                model="gpt-4o",
+            ),
+        ]
+
+        llm.invoke(messages, tools=tools)
+
+        kwargs = mock_completion.call_args.kwargs
+        assert kwargs["tools"] == [
+            *tools,
+            {"type": "web_search"},
+        ]
+
+
+def test_true_openai_uses_native_web_search_without_existing_tools() -> None:
+    llm = LitellmLLM(
+        api_key="test_key",
+        timeout=30,
+        model_provider=LlmProviderNames.OPENAI,
+        model_name="gpt-4o",
+        max_input_tokens=128000,
+        custom_config={"OPENAI_WEB_SEARCH_ENABLED": "true"},
+    )
+
+    messages: LanguageModelInput = [UserMessage(content="Find recent news")]
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = [
+            litellm.ModelResponse(
+                id="chatcmpl-123",
+                choices=[
+                    litellm.Choices(
+                        delta=_create_delta(role="assistant", content="Done"),
+                        finish_reason="stop",
+                        index=0,
+                    )
+                ],
+                model="gpt-4o",
+            ),
+        ]
+
+        llm.invoke(messages, tools=None)
+
+        kwargs = mock_completion.call_args.kwargs
+        assert kwargs["tools"] == [{"type": "web_search"}]
+
+
+def test_non_openai_provider_does_not_append_native_web_search_tool() -> None:
+    llm = LitellmLLM(
+        api_key="test_key",
+        timeout=30,
+        model_provider=LlmProviderNames.OPENAI_COMPATIBLE,
+        model_name="gpt-4o",
+        api_base="https://example.openai-compatible.local",
+        max_input_tokens=128000,
+        custom_config={"OPENAI_WEB_SEARCH_ENABLED": "true"},
+    )
+
+    messages: LanguageModelInput = [UserMessage(content="Search for the latest release")]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Look up data",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                },
+            },
+        }
+    ]
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = [
+            litellm.ModelResponse(
+                id="chatcmpl-123",
+                choices=[
+                    litellm.Choices(
+                        delta=_create_delta(role="assistant", content="Done"),
+                        finish_reason="stop",
+                        index=0,
+                    )
+                ],
+                model="gpt-4o",
+            ),
+        ]
+
+        llm.invoke(messages, tools=tools)
+
+        kwargs = mock_completion.call_args.kwargs
+        assert kwargs["tools"] == tools
 
 
 def test_bifrost_normalizes_api_base_in_model_kwargs() -> None:
