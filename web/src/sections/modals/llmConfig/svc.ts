@@ -139,25 +139,51 @@ export async function submitProvider<T extends BaseLLMFormValues>({
     "";
 
   // ── Test credentials ────────────────────────────────────────────────
-  const customConfigChanged = !isEqual(
-    values.custom_config,
-    initialValues.custom_config
-  );
+  const normalizeCustomConfig = (
+    customConfig: Record<string, string | undefined> | undefined
+  ) => {
+    if (!customConfig) {
+      return undefined;
+    }
+
+    const filteredEntries = Object.entries(customConfig).filter(
+      ([, value]) => value !== ""
+    );
+
+    return filteredEntries.length > 0
+      ? Object.fromEntries(filteredEntries)
+      : undefined;
+  };
 
   const normalizedApiBase =
     typeof rest.api_base === "string" && rest.api_base.trim() === ""
       ? undefined
       : rest.api_base;
+  const normalizedCustomConfig = normalizeCustomConfig(values.custom_config);
+  const normalizedInitialValues = {
+    ...initialValues,
+    api_base:
+      typeof initialValues.api_base === "string" &&
+      initialValues.api_base.trim() === ""
+        ? undefined
+        : initialValues.api_base,
+    custom_config: normalizeCustomConfig(initialValues.custom_config),
+  };
+  const customConfigChanged = !isEqual(
+    normalizedCustomConfig,
+    normalizedInitialValues.custom_config
+  );
 
   const finalValues = {
     ...rest,
     api_base: normalizedApiBase,
+    custom_config: normalizedCustomConfig,
     api_key,
     api_key_changed: api_key !== (initialValues.api_key as string | undefined),
     custom_config_changed: customConfigChanged,
   };
 
-  if (!isEqual(finalValues, initialValues)) {
+  if (!isEqual(finalValues, normalizedInitialValues)) {
     setStatus({ isTesting: true });
 
     const testResult = await submitLlmTestRequest(

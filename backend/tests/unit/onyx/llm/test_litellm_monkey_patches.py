@@ -1,5 +1,7 @@
 from typing import Any
+from unittest.mock import patch
 
+import litellm
 from litellm.llms.ollama.chat.transformation import OllamaChatCompletionResponseIterator
 
 from onyx.llm.litellm_singleton.monkey_patches import apply_monkey_patches
@@ -101,3 +103,16 @@ def test_ollama_chunk_parser_preserves_content_when_thinking_and_content_coexist
 
     assert response.choices[0].delta.reasoning_content == "Need one thought"
     assert response.choices[0].delta.content == "Visible answer token"
+
+
+def test_responses_patch_drops_explicit_none_metadata() -> None:
+    apply_monkey_patches()
+
+    def _fake_responses(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return kwargs
+
+    with patch.object(litellm, "responses", _fake_responses):
+        apply_monkey_patches()
+        result = litellm.responses(model="openai/responses/gpt-5", metadata=None)
+
+    assert "metadata" not in result

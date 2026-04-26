@@ -605,6 +605,45 @@ def _patch_logging_assembled_streaming_response() -> None:
     )
 
 
+def _patch_responses_metadata_none() -> None:
+    """
+    Patches litellm.responses to drop metadata=None from kwargs.
+
+    LiteLLM's @client decorator wrapper in utils.py (line 1721) does:
+        _is_litellm_router_call = "model_group" in kwargs.get("metadata", {})
+    When metadata is explicitly None in kwargs, kwargs.get("metadata", {}) returns
+    None (the key exists, so the default is not used), causing:
+        TypeError: argument of type 'NoneType' is not iterable
+
+    This swallows the real exception (e.g. AuthenticationError) and surfaces as:
+        APIConnectionError: OpenAIException - argument of type 'NoneType' is not iterable
+
+    This happens when the Responses API bridge calls litellm.responses() with
+    **litellm_params which may contain metadata=None.
+
+    STATUS: STILL NEEDED - litellm/utils.py wrapper function uses kwargs.get("metadata", {})
+            which does not guard against metadata being explicitly None. Same pattern exists
+            on line 1407 for async path.
+    """
+    from functools import wraps
+
+    import litellm as _litellm
+
+    original_responses = _litellm.responses
+
+    if getattr(original_responses, "_metadata_patched", False):
+        return
+
+    @wraps(original_responses)
+    def _patched_responses(*args: Any, **kwargs: Any) -> Any:
+        if "metadata" in kwargs and kwargs["metadata"] is None:
+            kwargs.pop("metadata")
+        return original_responses(*args, **kwargs)
+
+    _patched_responses._metadata_patched = True  # ty: ignore[unresolved-attribute]
+    _litellm.responses = _patched_responses
+
+
 def apply_monkey_patches() -> None:
     """
     Apply all necessary monkey patches to LiteLLM for compatibility.
@@ -616,6 +655,7 @@ def apply_monkey_patches() -> None:
     - Patching AzureOpenAIResponsesAPIConfig.should_fake_stream to enable native streaming
     - Patching ResponsesAPIResponse.model_construct to fix usage format in all code paths
     - Patching Logging._get_assembled_streaming_response to avoid mutating original response
+    - Patching litellm.responses to fix metadata=None causing TypeError in error handling
     """
     _patch_ollama_chunk_parser()
     _patch_responses_reasoning_summary_newlines()
@@ -623,3 +663,4 @@ def apply_monkey_patches() -> None:
     _patch_azure_responses_should_fake_stream()
     _patch_responses_api_usage_format()
     _patch_logging_assembled_streaming_response()
+    _patch_responses_metadata_none()

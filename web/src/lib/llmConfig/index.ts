@@ -138,6 +138,9 @@ const CUSTOM_CONFIG_OVERRIDES = new Set<string>([
   LLMProviderName.AZURE,
   LLMProviderName.OPENROUTER,
 ]);
+const OPENAI_NATIVE_CUSTOM_CONFIG_KEYS = new Set<string>([
+  "OPENAI_WEB_SEARCH_ENABLED",
+]);
 
 export function getProvider(
   providerName: string,
@@ -149,10 +152,16 @@ export function getProvider(
     companyName: providerName,
   };
 
-  if (
-    existingProvider?.custom_config != null &&
-    CUSTOM_CONFIG_OVERRIDES.has(providerName)
-  ) {
+  const customConfigKeys = Object.keys(existingProvider?.custom_config ?? {});
+  const shouldUseCustomModal =
+    customConfigKeys.length > 0 &&
+    CUSTOM_CONFIG_OVERRIDES.has(providerName) &&
+    !(
+      providerName === LLMProviderName.OPENAI &&
+      customConfigKeys.every((key) => OPENAI_NATIVE_CUSTOM_CONFIG_KEYS.has(key))
+    );
+
+  if (shouldUseCustomModal) {
     return { ...entry, Modal: CustomModal };
   }
 
