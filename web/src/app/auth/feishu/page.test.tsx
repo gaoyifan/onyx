@@ -151,6 +151,60 @@ describe("FeishuAuthPage", () => {
     });
   });
 
+  test("falls back to requestAuthCode when requestAccess authorization fails", async () => {
+    appendChildSpy.mockImplementation((node: Node) => {
+      setTimeout(() => {
+        const script = node as HTMLScriptElement;
+        script.onload?.(new Event("load"));
+      });
+      return node;
+    });
+    Object.defineProperty(window, "tt", {
+      configurable: true,
+      value: {
+        requestAccess: jest.fn(({ fail }) =>
+          fail({
+            errno: 2700002,
+            errString: "Authorization terminated unexpectedly",
+          })
+        ),
+        requestAuthCode: jest.fn(({ success }) =>
+          success({ code: "legacy-feishu-code" })
+        ),
+      },
+    });
+    fetchSpy
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          enabled: true,
+          app_id: "cli_test",
+          state: "state-token",
+          sdk_url: "https://example.com/h5.js",
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ redirect_url: "/app" }),
+      } as Response);
+
+    render(<FeishuAuthPage />);
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/auth/feishu/login",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+          body: JSON.stringify({
+            code: "legacy-feishu-code",
+            state: "state-token",
+          }),
+        })
+      );
+    });
+  });
+
   test("shows error when backend rejects login", async () => {
     appendChildSpy.mockImplementation((node: Node) => {
       setTimeout(() => {

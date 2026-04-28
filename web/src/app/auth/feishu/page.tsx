@@ -95,9 +95,12 @@ function requestFeishuAccess(appId: string): Promise<string> {
       return;
     }
 
-    const requestAuthCode = () => {
+    const requestAuthCode = (requestAccessError?: unknown) => {
       if (!window.tt?.requestAuthCode) {
-        reject(new Error("This Feishu client does not support login."));
+        reject(
+          requestAccessError ??
+            new Error("This Feishu client does not support login.")
+        );
         return;
       }
 
@@ -114,7 +117,6 @@ function requestFeishuAccess(appId: string): Promise<string> {
       });
     };
 
-    window.h5sdk.error?.((error) => reject(error));
     window.h5sdk.ready(() => {
       if (!window.tt?.requestAccess) {
         requestAuthCode();
@@ -132,12 +134,9 @@ function requestFeishuAccess(appId: string): Promise<string> {
           resolve(result.code);
         },
         fail: (error) => {
-          const errorRecord = error as Record<string, unknown>;
-          if (errorRecord?.errno === 103) {
-            requestAuthCode();
-            return;
-          }
-          reject(error);
+          // Some Feishu clients return 2700002/99991679 for requestAccess even
+          // though the legacy login-free API can still issue an auth code.
+          requestAuthCode(error);
         },
       });
     });
